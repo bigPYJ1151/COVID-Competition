@@ -5,7 +5,7 @@ import SimpleITK as sitk
 import numpy as np
 from tqdm import tqdm
 
-def Resample(path_list, target_path, spacing, num_processes=None):
+def Resample(path_list, target_path, num_processes=None):
     '''
     Args:
         path_lisy:str
@@ -19,12 +19,12 @@ def Resample(path_list, target_path, spacing, num_processes=None):
     process_pool = Pool(num_processes)
 
     for i in range(num_processes):
-        process_pool.apply_async(Image_resample_operation, args=(i, num_processes, path_list, target_path, spacing))
+        process_pool.apply_async(Image_resample_operation, args=(i, num_processes, path_list, target_path))
 
     process_pool.close()
     process_pool.join()
 
-def Image_resample_operation(process_id, num_processes, path_list, target_path, setting):
+def Image_resample_operation(process_id, num_processes, path_list, target_path):
     print('Process {} launch.'.format(process_id))
     len_persplits = len(path_list) // num_processes
 
@@ -42,22 +42,12 @@ def Image_resample_operation(process_id, num_processes, path_list, target_path, 
     for source_path in path_list:
         fname = source_path.split('/')[-1]
 
-        if os.path.exists(os.path.join(target_path, fname)) == False:
-            os.mkdir(os.path.join(target_path, fname))
-
-        image = sitk.ReadImage(os.path.join(source_path, 'im.nii.gz'))
-        image = ImageResample(image, setting, False)
-        sitk.WriteImage(image, os.path.join(target_path, fname, 'im.nii.gz'))
+        image = sitk.ReadImage(source_path)
+        spacing = image.GetSpacing()
+        newSpacing = [spacing[0], spacing[1], 2.0]
+        image = ImageResample(image, newSpacing, False)
+        sitk.WriteImage(image, os.path.join(target_path, fname))
         
-        if os.path.exists(os.path.join(source_path, 'mask.nii.gz')) == True:
-            label = sitk.ReadImage(os.path.join(source_path, 'mask.nii.gz'))
-            label = ImageResample(label, setting, True)
-
-            if image.GetSize() != label.GetSize():
-                print('Alert, {}!!'.format(fname))
-
-            sitk.WriteImage(label, os.path.join(target_path, fname, 'mask.nii.gz'))
-
     print('Process {} end.'.format(process_id))
 
 
