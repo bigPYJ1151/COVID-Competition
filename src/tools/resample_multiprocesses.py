@@ -1,8 +1,10 @@
 
 import os 
 from multiprocessing import Pool, cpu_count
+import pickle
 import SimpleITK as sitk 
 import numpy as np
+from .preprocess import StoicDataPreprocess
 from tqdm import tqdm
 
 def Resample(path_list, target_path, num_processes=None):
@@ -44,10 +46,14 @@ def Image_resample_operation(process_id, num_processes, path_list, target_path):
 
         image = sitk.ReadImage(source_path)
         spacing = image.GetSpacing()
-        newSpacing = [spacing[0], spacing[1], 2.0]
-        image = ImageResample(image, newSpacing, False)
-        sitk.WriteImage(image, os.path.join(target_path, fname))
+        image = StoicDataPreprocess(image)
         
+        # image = sitk.GetImageFromArray(image)
+        # image.SetSpacing(spacing)
+        # sitk.WriteImage(image, os.path.join(target_path, fname))
+
+        with open(os.path.join(target_path, fname.split('.')[0]), 'wb') as f:
+            pickle.dump(image.astype('float16'), f)
     print('Process {} end.'.format(process_id))
 
 

@@ -248,7 +248,7 @@ class Trainer:
 
     def _load_params(self, process_id):
         result = torch.load(self.pretrain_path, map_location='cuda:{}'.format(process_id))
-        params = result['param']
+        params = result['params']
 
         return params
 

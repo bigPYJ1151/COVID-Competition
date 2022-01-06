@@ -16,55 +16,31 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from data import ClassifyDataExtraC
-from model.classifer import VNet
-# from model.unet import UNet3D
+from model.resnet import ResNet, Bottleneck, BasicBlock
 from model.loss_v2 import GDiceLoss_v2, GDiceLoss, TverskyLoss, CAMConstrain, CAMConstrainDirection
 from tools.metrics import DSCCompute, PNMetricsCompute
 from tools.Trainer import Trainer
 
-dataset_name = 'TAPVC'
-data_spacing = '0.35_0.35_0.625'
-
+dataset_name = 'stoic2021'
 fold_path = os.path.join('..', 'data', dataset_name, 'splits_cls')
-# data_path = os.path.join('..', 'data', dataset_name, 'all_data_{}'.format(data_spacing))
-# label_path = os.path.join('..', 'data', "TAPVC_fine", '{}_fine_duc_ds_gatt_2_4_best'.format(dataset_name))
-data_path = os.path.join('/home/ps', 'all_data_{}'.format(data_spacing))
-label_path = os.path.join('/home/ps', '{}_fine_duc_ds_gatt_2_4_best'.format(dataset_name))
-model_tag = '{}_classify_softmax_resin_cam0.1_v3'.format(dataset_name)
+data_path = os.path.join('..', 'data', dataset_name, 'data_2')
+# data_path = os.path.join('/home/ps', 'all_data_{}'.format(data_spacing))
+# label_path = os.path.join('/home/ps', '{}_fine_duc_ds_gatt_2_4_best'.format(dataset_name))
+model_tag = '{}_resnet18'.format(dataset_name)
 
-batchsize = 16
+batchsize = 10
 lr = 1e-4
-workers = 4
-epoch = 100
-
-class ClassifyModel(nn.Module):
-    def __init__(self, inplane, plane):
-        super().__init__()
-        # self.vnet = VNet(n_channels=inplane, n_classes=plane, normalization='instancenorm', has_dropout=False, activation=nn.ReLU)
-        # self.unet = UNet3D(inplane, plane, layer_order='cri')
-        self.vnet = VNet(n_channels=inplane, n_classes=plane, normalization='instancenorm', has_dropout=False, activation=nn.LeakyReLU, n_filters=8)
-
-    def forward(self, x):
-        out = self.vnet(x)
-        # out = self.unet(x)
-
-        return out
+workers = 8
+epoch = 50
 
 class LossModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.ce = nn.CrossEntropyLoss(reduction='none')
-        self.camC = CAMConstrain(weight=0.1)
-        self.camD = CAMConstrainDirection(weight=0.1)
-        # self.ce = nn.CrossEntropyLoss(torch.Tensor([1,3]), reduction='none')
 
-    def forward(self, logit, label, cam, camLabel):
-        # loss = self.ce(logit, label)
-        ce = self.ce(logit, label)
-        camC = self.camC(cam, camLabel)
-        camD = self.camD(cam, camLabel, label)
-        loss = ce + camC + camD
-        
+    def forward(self, prob, label):
+        loss = F.smooth_l1_loss(prob, label, reduction='none')
+        loss = loss.mean(dim=1)
+
         return loss
 
 class ClassifyModelTrainer(Trainer):
@@ -73,20 +49,15 @@ class ClassifyModelTrainer(Trainer):
         super().__init__(**kwargs)
 
     def forward_step(self, input_data, model, loss_module):
-        _, image, label, imageLabel, features = input_data
+        _, image, label = input_data
         image = image.cuda(non_blocking=True)
-        label = label.to(torch.long).cuda(non_blocking=True)
-        imageLabel = imageLabel.to(torch.long).cuda(non_blocking=True)
+        label = label.to(torch.float32).cuda(non_blocking=True)
     
-        output, cam = model(image)
-        loss = loss_module(output, label, cam, imageLabel).mean()
+        output = model(image)
+        loss = loss_module(output, label).mean()
 
         with torch.no_grad():
-            label = F.one_hot(label)
-
-            predict = torch.argmax(output.detach(), dim=1)
-            predict = F.one_hot(predict)
-
+            predict = (output > 0.5).type_as(label) 
             Jaccard, Precision, Recall, Specificity, Accuracy, F1 = PNMetricsCompute(predict, label)
             metrics = torch.cat([Accuracy.unsqueeze(1), Precision.unsqueeze(1), Recall.unsqueeze(1), F1.unsqueeze(1)], dim=1)
         return {
@@ -131,7 +102,7 @@ if __name__ == "__main__":
 
     for foldIter in range(5): 
         PrevBestMetric = None
-        LoopTimes = 10
+        LoopTimes = 1
         targetFold = "fold{}.pth".format(foldIter)
         metricHistory = []
         
@@ -142,16 +113,13 @@ if __name__ == "__main__":
                     continue
 
                 val_list = []
-                val_label_list = []
                 with open(os.path.join(fold_path, foldi), 'rb') as f:
                     val_name = pickle.load(f)
 
                 for fname in val_name:
-                    val_list.append(os.path.join(data_path, fname))
-                    val_label_list.append(os.path.join(label_path, fname))
+                    val_list.append(os.path.join(data_path, str(fname)))
 
                 train_list = []
-                train_label_list = []
                 for fold in os.listdir(fold_path):
                     if fold == foldi:
                         continue
@@ -160,8 +128,7 @@ if __name__ == "__main__":
                         train_name = pickle.load(f)
 
                     for fname in train_name:
-                        train_list.append(os.path.join(data_path, fname))
-                        train_label_list.append(os.path.join(label_path, fname))
+                        train_list.append(os.path.join(data_path, str(fname)))
 
                 for p in train_list:
                     if p in val_list:
@@ -184,18 +151,18 @@ if __name__ == "__main__":
                 config = {
                     'data_config':{
                         'dataset':ClassifyDataExtraC,
-                        'train_config':{'data_path':train_list, 'label_path':train_label_list, 'patch_size':(128, 160, 208), 'expand_num':(0, 0, 0), 'clip_max': 1200, 'clip_min':-100, 'class_num':2, 'train':True},
-                        'val_config':{'data_path':val_list, 'label_path':val_label_list, 'patch_size':(128, 160, 208), 'expand_num':(0, 0, 0), 'clip_max': 1200, 'clip_min':-100, 'class_num':2, 'train':False}
+                        'train_config':{'data_path':train_list, 'patch_size':(160,512,512), 'expand_num':(0, 0, 0), 'class_num':2, 'train':True},
+                        'val_config':{'data_path':val_list, 'patch_size':(160,512,512), 'expand_num':(0, 0, 0), 'class_num':2, 'train':False}
                     },
                     'train_config':{
-                        'model':(ClassifyModel, {'inplane':1, 'plane':2}),
+                        'model':(ResNet, {"block": BasicBlock, "layers": [2, 2, 2, 2], "sample_input_D": 0, "sample_input_H": 0, "sample_input_W": 0, "num_seg_classes": 2}),
                         'loss_module':(LossModel, {}),
                         'optimizer':(Adam, {'lr':lr, 'weight_decay':1e-5}),
                         # 'scheduler':(CosineAnnealingWarmRestarts, {'T_0':1, 'T_mult':17, 'eta_min':lr / 20}),
                     },
                     'record_config':{
                         'tag':current_tag,
-                        'class_tag':['non-PVO', 'PVO'],
+                        'class_tag':['COVID', 'Severe'],
                         'metrics_tag':['Accuracy', 'Precision', 'Recall', "F1"],
                         'metrics_key':['loss', "rloss", 'Accuracy', 'Precision', 'Recall', "F1"],
                         'sort_key':'rloss',
@@ -204,7 +171,9 @@ if __name__ == "__main__":
                     },
                     'other_config':{
                         'epochs':epoch, 'batch_size':batchsize, 
-                        'workers':workers, 'eval_T':4, 'warmingup_T':2, 'amp_train':False}
+                        'workers':workers, 'eval_T':4, 'warmingup_T':2, 'amp_train':False,
+                        'pretrian_path': os.path.join('..', 'record', 'pretrain', 'resnet_18.pth')
+                    }
                 }
                 trainer = ClassifyModelTrainer(**config)
                 try:

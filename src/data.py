@@ -114,13 +114,11 @@ class SegData(Dataset):
 
 class ClassifyDataExtraC(SegData):
 
-    def __init__(self, data_path, label_path, patch_size, expand_num, clip_max, clip_min, class_num, train=True):
-        super().__init__(data_path, patch_size, clip_max, clip_min, class_num, train)
+    def __init__(self, data_path, patch_size, expand_num, class_num, train=True):
+        super().__init__(data_path, patch_size, 0, 0, class_num, train)
 
-        self.label_path = label_path
         self.expand_num = expand_num
-        self.tapvcInfo = {}
-        with open(os.path.join("..", "data", "tapvc_info.pth"), "rb") as f:
+        with open(os.path.join("..", "data", "stoic2021", "LabelInfo.pth"), "rb") as f:
             self.tapvcInfo = pickle.load(f)
 
     def __getitem__(self, index):
@@ -129,56 +127,37 @@ class ClassifyDataExtraC(SegData):
         clip_min = self.clip_min
 
         path = self.data_path[index]
-        coarse_label_path = self.label_path[index]
 
-        image = sitk.ReadImage(os.path.join(path, 'im.nii.gz'))
-        coarse_label = sitk.ReadImage(os.path.join(coarse_label_path, 'predict.nii.gz'))
-        label = sitk.ReadImage(os.path.join(path, 'mask.nii.gz'))
+        with open(path, "rb") as f:
+            image = pickle.load(f)
 
-        image, label, coarse_label = self._ROIextract(image, label, coarse_label)
+        # if self.train:
+        #     transforms = []
+        #     if np.random.uniform() > 0.5:
+        #         transforms.append(aug.Rotation3D(
+        #             image, 
+        #             angle=(20 * np.random.rand() - 10, 20 * np.random.rand() - 10, 20 * np.random.rand() - 10),
+        #             center = tuple(np.array(image.GetSize()) / 2)
+        #         ))
 
-        if self.train:
-            transforms = []
-            if np.random.uniform() > 0.5:
-                transforms.append(aug.Rotation3D(
-                    image, 
-                    angle=(20 * np.random.rand() - 10, 20 * np.random.rand() - 10, 20 * np.random.rand() - 10),
-                    center = tuple(np.array(image.GetSize()) / 2)
-                ))
+        #     # if np.random.uniform() > 0.5:
+        #     #     scale = 0.8 + 0.4 * np.random.rand()
+        #     #     transforms.append(aug.Scale3D(
+        #     #         image,
+        #     #         scale=(scale, scale, scale),
+        #     #         center = tuple(np.array(image.GetSize()) / 2),
+        #     #     ))
 
-            # if np.random.uniform() > 0.5:
-            #     scale = 0.8 + 0.4 * np.random.rand()
-            #     transforms.append(aug.Scale3D(
-            #         image,
-            #         scale=(scale, scale, scale),
-            #         center = tuple(np.array(image.GetSize()) / 2),
-            #     ))
-
-            transforms = aug.ComposeTransforms(transforms)
-            image = aug.ExecuteTransform(image, transforms, False, clip_min)
-            label = aug.ExecuteTransform(label, transforms, True)
-            coarse_label = aug.ExecuteTransform(coarse_label, transforms, True)
+        #     transforms = aug.ComposeTransforms(transforms)
+        #     image = aug.ExecuteTransform(image, transforms, False, clip_min)
+        #     label = aug.ExecuteTransform(label, transforms, True)
+        #     coarse_label = aug.ExecuteTransform(coarse_label, transforms, True)
 
         #IIR Guassin
         # coarse_label = IIRGaussianSmooth(coarse_label, 10)
 
-        image = sitk.GetArrayFromImage(image)
-        label = sitk.GetArrayFromImage(label)
-        coarse_label = sitk.GetArrayFromImage(coarse_label)
-
-        image, label, pad_s = self._Padding(image, label, clip_min)
-        coarse_label = np.pad(coarse_label, tuple(pad_s), mode='constant', constant_values=0)
-
         patientName = path.split('/')[-1]
-        tapvcItem = self.tapvcInfo[patientName]
-        label2 = tapvcItem["label2"]
-        feature = np.array(tapvcItem["feature"])
-
-        #For IIR
-        # coarse_label /= coarse_label.max()
-
-        #clip and normalize
-        image = ClipandNormalize(image, clip_min, clip_max)
+        tapvcItem = self.tapvcInfo[int(patientName)]
 
         if self.train:
             if np.random.uniform() > 0.5:
@@ -190,7 +169,7 @@ class ClassifyDataExtraC(SegData):
 
         image = np.expand_dims(image, axis=0)
 
-        return path, image.astype('float32'), label2, coarse_label.astype('int64'), feature.astype("float32")
+        return path, image.astype('float32'), np.array(tapvcItem)
 
     def _ROIextract(self, image, label, coarse_label):
         spacing = image.GetSpacing()
