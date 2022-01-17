@@ -4,7 +4,8 @@ from multiprocessing import Pool, cpu_count
 import pickle
 import SimpleITK as sitk 
 import numpy as np
-from .preprocess import StoicDataPreprocess
+from torch import Assert
+from .new_preprocess import preprocess
 from tqdm import tqdm
 
 def Resample(path_list, target_path, num_processes=None):
@@ -46,8 +47,9 @@ def Image_resample_operation(process_id, num_processes, path_list, target_path):
 
         image = sitk.ReadImage(source_path)
         spacing = image.GetSpacing()
-        image = StoicDataPreprocess(image)
-        
+        image = preprocess(image, (1.0,1.0,2.0), (120,240,240))   # newpreprocess: default
+                                    # newpreprocessv2: spacing:(1,1,2) patch:(120,240,240)
+        Assert(image.shape == (120,240,240), "Size mismatch.")
         # image = sitk.GetImageFromArray(image)
         # image.SetSpacing(spacing)
         # sitk.WriteImage(image, os.path.join(target_path, fname))

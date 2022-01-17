@@ -99,7 +99,6 @@ class Evaluator:
         self.model_config = kwargs['model_config']['model_config']
         self.model_path = kwargs['model_config']['model_path']
         self.patchsize = kwargs['model_config']['patchsize']
-        self.spacing = kwargs['model_config']['spacing']
 
         self.recorder = self._recorder_init()
 
@@ -172,61 +171,13 @@ class Evaluator:
                 output = self.generate_probmap(preprocessed_output, model, global_inform) 
                 output = self.postprocess(output, global_inform)
 
-                if self.compute_metric:
-                    label = origin_output['label']
-                    label = sitk.GetArrayFromImage(label)
-                    recorder = self._metric_compute(output, label, recorder, global_inform)
-
-                store_path = os.path.join(self.record_path, global_inform['tag'])
+                store_path = os.path.join(self.record_path, str(global_inform['tag']))
                 if os.path.exists(store_path) == False:
                     os.mkdir(store_path)
 
-                prob, probmap_array = output
+                prob = output
                 with open(os.path.join(store_path, "prob.pth"), 'wb') as f:
                     pickle.dump(prob, f)
-
-                ROI_se = global_inform["ROI_inform"]
-
-                probmap_array = probmap_array[
-                    :,
-                    ROI_se[0][0]:ROI_se[0][1],
-                    ROI_se[1][0]:ROI_se[1][1],
-                    ROI_se[2][0]:ROI_se[2][1]
-                ]
-                probmap_array = np.moveaxis(probmap_array, 0, 3)
-                probmap_array = sitk.GetImageFromArray(probmap_array)
-                probmap_array.SetSpacing(global_inform['origin_spacing'])
-                probmap_array.SetOrigin(global_inform['origin_origin'])
-                probmap_array.SetDirection(global_inform['origin_direction'])
-
-                sitk.WriteImage(probmap_array, os.path.join(store_path, "cam.nii.gz"))
-                
-                probmap_array = global_inform["cropped_image"]
-                probmap_array = sitk.GetImageFromArray(probmap_array)
-                probmap_array.SetSpacing(global_inform['origin_spacing'])
-                probmap_array.SetOrigin(global_inform['origin_origin'])
-                probmap_array.SetDirection(global_inform['origin_direction'])
-
-                sitk.WriteImage(probmap_array, os.path.join(store_path, "cim.nii.gz"))
-                
-                probmap_array = global_inform["cropped_label"]
-                probmap_array = sitk.GetImageFromArray(probmap_array)
-                probmap_array.SetSpacing(global_inform['origin_spacing'])
-                probmap_array.SetOrigin(global_inform['origin_origin'])
-                probmap_array.SetDirection(global_inform['origin_direction'])
-
-                sitk.WriteImage(probmap_array, os.path.join(store_path, "clabel.nii.gz"))
-
-                if self.image_record_type == 1:
-                    fnamelist = os.listdir(data_path)
-                    if "mask.nii.gz" in fnamelist:
-                        os.symlink(os.path.join(data_path, "mask.nii.gz"), os.path.join(store_path, 'mask.nii.gz'))
-                    os.symlink(global_inform['origin_image_path'], os.path.join(store_path, 'im.nii.gz'), )
-                elif self.image_record_type == 2:
-                    fnamelist = os.listdir(data_path)
-                    if "mask.nii.gz" in fnamelist:
-                        os.link(os.path.join(data_path, "mask.nii.gz"), os.path.join(store_path, 'mask.nii.gz'))
-                    os.link(global_inform['origin_image_path'], os.path.join(store_path, 'im.nii.gz'))
 
         if processing_id == 0:
             update_n = len(self.data_tag_list) - message_q.qsize() - bar.n
@@ -309,36 +260,8 @@ class Evaluator:
         Return:
             global_inform: dict, adds 'start_point', list [(zs,ys,xs)]
         '''
-        ROI_inform = global_inform['ROI_inform']
-        
-        s = [[], [], []]
-        for i, se in enumerate(ROI_inform):
-            sp, ep = se
-            l = ep - sp - self.patchsize[i]
 
-            s[i].append(sp)
-            if l == 0:
-                continue
-
-            s[i].append(ep - self.patchsize[i])
-            if l == 1:
-                continue
-
-            if (ep - sp) <= (2 * self.patchsize[i]):
-                s[i].append((sp + ep - self.patchsize[i]) // 2)
-            else:
-                spp = sp + self.patchsize[i] // 2
-                while spp < (ep - self.patchsize[i]):
-                    s[i].append(spp)
-                    spp += self.patchsize[i] // 2
-
-        start_point = []
-        for zs in s[0]:
-            for ys in s[1]:
-                for xs in s[2]:
-                    start_point.append((zs, ys, xs))
-
-        global_inform['start_point'] = start_point
+        global_inform['start_point'] = [(0,0,0)]
 
         return global_inform
 
@@ -357,7 +280,6 @@ class Evaluator:
         start_points = global_inform['start_point']
 
         model_output_list = []
-        model_cam_list = []
         for i in range(len(model_list)):
             model_list[i].to(device=global_inform['device'])
             for j in range(len(self.model_path[i])):
@@ -372,16 +294,13 @@ class Evaluator:
                     output_list.append(output)
 
                 reconstructed_predict = self.label_reconstruction(output_list, global_inform)
-                model_output_list.append(reconstructed_predict[0])
-                model_cam_list.append(reconstructed_predict[1])
+                model_output_list.append(reconstructed_predict)
 
             model_list[i].to(device='cpu')
             torch.cuda.empty_cache()
         
         output = sum(model_output_list) / len(model_output_list)
-        cam = sum(model_cam_list) / len(model_cam_list)
-
-        return output, cam
+        return output
 
     def _start_pointBatchgenerator(self, start_point_list):
         start = 0
@@ -415,20 +334,9 @@ class Evaluator:
         '''
         x, start_point = input_data
         x = x.cuda(non_blocking=True)
-        output, cam = model(x)
-        output = torch.softmax(output, dim=1)
+        output = model(x)
 
-        # cam = cam[:,1,:,:,:] - cam[:,0,:,:,:]
-
-        camMin = torch.min(cam)
-        camMax = torch.max(cam)
-
-        cam = (cam - camMin) / (camMax - camMin)
-        if self.memory_opt_level == 2 or self.memory_opt_level == 3:
-            output = output.cpu()
-            cam = cam.cpu()
-
-        output_result = {'output': (output, cam), 'start_point': start_point}
+        output_result = {'output': (output, ), 'start_point': start_point}
 
         return output_result
     
@@ -441,36 +349,10 @@ class Evaluator:
         Return:
             label: Tensor, reconstructed probability map, (N, C, Z, Y, X)
         '''
-        padded_shape = global_inform['padded_shape']
-        label = torch.zeros((len(self.class_tag), *padded_shape), dtype=torch.float).cuda()
-        lz, ly, lx = self.patchsize
-
-        prob = None
         for batch in batch_list:
-            start_points = batch['start_point']
-            prob = batch['output'][0].type_as(label)
-            cam = batch['output'][1].type_as(label)
-            for i, s in enumerate(start_points):
-                zs, ys, xs = s
-                label[:, zs:(zs+lz), ys:(ys+ly), xs:(xs+lx)] += cam[i]
+            prob = batch['output'][0].cpu()
 
-        norm = label.sum(dim=0, keepdim=True) / len(self.class_tag)
-        norm = torch.clamp_min(norm, 1)
-        label /= norm
-
-        c, z, y, x = label.size()
-        pad_s = global_inform['pad_s']
-        label = label[
-            :,
-            pad_s[0][0]:(z - pad_s[0][1]),
-            pad_s[1][0]:(y - pad_s[1][1]),
-            pad_s[2][0]:(x - pad_s[2][1]),
-        ]
-
-        if self.memory_opt_level == 1 or self.memory_opt_level == 3:
-            label = label.cpu()
-
-        return prob.squeeze(), label
+        return prob.squeeze()
 
     @abc.abstractmethod
     def postprocess(self, predict, global_inform):

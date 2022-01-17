@@ -26,11 +26,11 @@ fold_path = os.path.join('..', 'data', dataset_name, 'splits_cls')
 data_path = os.path.join('..', 'data', dataset_name, 'data_2')
 # data_path = os.path.join('/home/ps', 'all_data_{}'.format(data_spacing))
 # label_path = os.path.join('/home/ps', '{}_fine_duc_ds_gatt_2_4_best'.format(dataset_name))
-model_tag = '{}_resnet18'.format(dataset_name)
+model_tag = '{}_resnet18_newpreprocess'.format(dataset_name)
 
-batchsize = 10
+batchsize = 8
 lr = 1e-4
-workers = 8
+workers = 5
 epoch = 50
 
 class LossModel(nn.Module):
@@ -151,8 +151,8 @@ if __name__ == "__main__":
                 config = {
                     'data_config':{
                         'dataset':ClassifyDataExtraC,
-                        'train_config':{'data_path':train_list, 'patch_size':(160,512,512), 'expand_num':(0, 0, 0), 'class_num':2, 'train':True},
-                        'val_config':{'data_path':val_list, 'patch_size':(160,512,512), 'expand_num':(0, 0, 0), 'class_num':2, 'train':False}
+                        'train_config':{'data_path':train_list, 'patch_size':(240,240,240), 'expand_num':(0, 0, 0), 'class_num':2, 'train':True},
+                        'val_config':{'data_path':val_list, 'patch_size':(240,240,240), 'expand_num':(0, 0, 0), 'class_num':2, 'train':False}
                     },
                     'train_config':{
                         'model':(ResNet, {"block": BasicBlock, "layers": [2, 2, 2, 2], "sample_input_D": 0, "sample_input_H": 0, "sample_input_W": 0, "num_seg_classes": 2}),
