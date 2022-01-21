@@ -24,8 +24,8 @@ from tools.preprocess import ImageResample, ClipandNormalize, IIRGaussianSmooth
 
 dataset_name = 'stoic2021'
 fold_path = [os.path.join('..', 'data', dataset_name, 'splits_cls', 'fold{}.pth'.format(args.fold))]
-data_path = os.path.join('..', 'data', dataset_name, 'data_2')
-model_tag = '{}_resnet18_newpreprocess'.format(dataset_name)
+data_path = os.path.join('..', 'data', dataset_name, 'data_3')
+model_tag = '{}_resnet18_newpreprocess_v2'.format(dataset_name)
 model_path = os.path.join('..', 'record', '{}_fold{}.pth'.format(model_tag, args.fold), 'model', 'best_model.pth')
 record_path = os.path.join('..', 'record', '{}_fold{}.pth'.format(model_tag, args.fold), 'data')
 
@@ -55,7 +55,7 @@ class ClassifyEvaluator(Evaluator):
         return None
 
     def postprocess(self, predict, global_inform):
-        prob = predict
+        prob = torch.sigmoid(predict) 
 
         return prob.cpu().numpy()
 
@@ -90,7 +90,7 @@ if __name__ == "__main__":
             'model': [ResNet],
             'model_config': [{"block": BasicBlock, "layers": [2, 2, 2, 2], "sample_input_D": 0, "sample_input_H": 0, "sample_input_W": 0, "num_seg_classes": 2}],
             'model_path':[[model_path]],
-            'patchsize': (240,240,240),
+            'patchsize': (120,240,240),
         }
     }
     evaluator = ClassifyEvaluator(**config)

@@ -6,7 +6,7 @@ import numpy as np
 import pickle
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-g', '--gpus', default='1', type=str, help='Index of GPU used')
+parser.add_argument('-g', '--gpus', default='0,1', type=str, help='Index of GPU used')
 args = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus 
 
@@ -23,22 +23,25 @@ from tools.Trainer import Trainer
 
 dataset_name = 'stoic2021'
 fold_path = os.path.join('..', 'data', dataset_name, 'splits_cls')
-data_path = os.path.join('..', 'data', dataset_name, 'data_2')
+# data_path = os.path.join('..', 'data', dataset_name, 'data_3')
+data_path = os.path.join('/home', 'ps', 'data_3')
 # data_path = os.path.join('/home/ps', 'all_data_{}'.format(data_spacing))
 # label_path = os.path.join('/home/ps', '{}_fine_duc_ds_gatt_2_4_best'.format(dataset_name))
-model_tag = '{}_resnet18_newpreprocess'.format(dataset_name)
+model_tag = '{}_resnet18_newpreprocess_v2'.format(dataset_name)
 
-batchsize = 8
+batchsize = 16
 lr = 1e-4
-workers = 5
-epoch = 50
+workers = 4
+epoch = 75
 
 class LossModel(nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, prob, label):
-        loss = F.smooth_l1_loss(prob, label, reduction='none')
+        # loss = F.smooth_l1_loss(prob, label, reduction='none')
+        loss = F.binary_cross_entropy_with_logits(prob, label, reduction='none')
+        
         loss = loss.mean(dim=1)
 
         return loss
@@ -151,8 +154,8 @@ if __name__ == "__main__":
                 config = {
                     'data_config':{
                         'dataset':ClassifyDataExtraC,
-                        'train_config':{'data_path':train_list, 'patch_size':(240,240,240), 'expand_num':(0, 0, 0), 'class_num':2, 'train':True},
-                        'val_config':{'data_path':val_list, 'patch_size':(240,240,240), 'expand_num':(0, 0, 0), 'class_num':2, 'train':False}
+                        'train_config':{'data_path':train_list, 'patch_size':(120,240,240), 'expand_num':(0, 0, 0), 'class_num':2, 'train':True},
+                        'val_config':{'data_path':val_list, 'patch_size':(120,240,240), 'expand_num':(0, 0, 0), 'class_num':2, 'train':False}
                     },
                     'train_config':{
                         'model':(ResNet, {"block": BasicBlock, "layers": [2, 2, 2, 2], "sample_input_D": 0, "sample_input_H": 0, "sample_input_W": 0, "num_seg_classes": 2}),

@@ -150,7 +150,6 @@ class ResNet(nn.Module):
                                         kernel_size=1,
                                         stride=(1, 1, 1),
                                         bias=True),
-                                        nn.Sigmoid()
                                         )
 
         for m in self.modules():
