@@ -6,7 +6,7 @@ import numpy as np
 import pickle
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-g', '--gpus', default='0,1', type=str, help='Index of GPU used')
+parser.add_argument('-g', '--gpus', default='0', type=str, help='Index of GPU used')
 args = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus 
 
@@ -27,12 +27,12 @@ fold_path = os.path.join('..', 'data', dataset_name, 'splits_cls')
 data_path = os.path.join('/home', 'ps', 'data_3')
 # data_path = os.path.join('/home/ps', 'all_data_{}'.format(data_spacing))
 # label_path = os.path.join('/home/ps', '{}_fine_duc_ds_gatt_2_4_best'.format(dataset_name))
-model_tag = '{}_resnet18_newpreprocess_v2'.format(dataset_name)
+model_tag = '{}_resnet18_newpreprocess_v3'.format(dataset_name)
 
 batchsize = 16
 lr = 1e-4
 workers = 4
-epoch = 75
+epoch = 100
 
 class LossModel(nn.Module):
     def __init__(self):
@@ -108,7 +108,7 @@ if __name__ == "__main__":
         LoopTimes = 1
         targetFold = "fold{}.pth".format(foldIter)
         metricHistory = []
-        
+
         for loopIter in range(LoopTimes):
             print("Start loop, iter={}".format(loopIter))
             for foldi in os.listdir(fold_path):
@@ -175,7 +175,7 @@ if __name__ == "__main__":
                     'other_config':{
                         'epochs':epoch, 'batch_size':batchsize, 
                         'workers':workers, 'eval_T':4, 'warmingup_T':2, 'amp_train':False,
-                        'pretrian_path': os.path.join('..', 'record', 'pretrain', 'resnet_18.pth')
+                        # 'pretrian_path': os.path.join('..', 'record', 'pretrain', 'resnet_18.pth')
                     }
                 }
                 trainer = ClassifyModelTrainer(**config)

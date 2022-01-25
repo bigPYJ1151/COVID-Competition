@@ -25,7 +25,7 @@ from tools.preprocess import ImageResample, ClipandNormalize, IIRGaussianSmooth
 dataset_name = 'stoic2021'
 fold_path = [os.path.join('..', 'data', dataset_name, 'splits_cls', 'fold{}.pth'.format(args.fold))]
 data_path = os.path.join('..', 'data', dataset_name, 'data_3')
-model_tag = '{}_resnet18_newpreprocess_v2'.format(dataset_name)
+model_tag = '{}_resnet18_newpreprocess_v3'.format(dataset_name)
 model_path = os.path.join('..', 'record', '{}_fold{}.pth'.format(model_tag, args.fold), 'model', 'best_model.pth')
 record_path = os.path.join('..', 'record', '{}_fold{}.pth'.format(model_tag, args.fold), 'data')
 
